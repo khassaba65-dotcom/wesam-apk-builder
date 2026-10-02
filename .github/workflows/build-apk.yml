@@ -1,0 +1,81 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'App display name'
+        required: true
+      package_name:
+        description: 'Package (com.example.app)'
+        required: true
+      version:
+        description: 'Version'
+        default: '1.0'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Cordova
+        run: npm install -g cordova@12
+
+      - name: Prepare source
+        run: |
+          mkdir -p src_www
+          if [ -f source.zip ]; then
+            unzip -q source.zip -d src_www/
+          else
+            echo "<h1>Hello</h1>" > src_www/index.html
+          fi
+          if [ $(ls src_www | wc -l) -eq 1 ] && [ -d "src_www/$(ls src_www)" ]; then
+            mv src_www/*/* src_www/ 2>/dev/null || true
+          fi
+
+      - name: Create Cordova project
+        run: |
+          cordova create app "${{ github.event.inputs.package_name }}" "${{ github.event.inputs.app_name }}"
+          rm -rf app/www/*
+          cp -r src_www/* app/www/ 2>/dev/null || true
+          
+          if [ -f icon.png ]; then
+            mkdir -p app/res/icon/android
+            cp icon.png app/res/icon/android/icon.png
+          fi
+          
+          if [ -f splash.png ]; then
+            mkdir -p app/res/screen/android
+            cp splash.png app/res/screen/android/screen-portrait.png
+          fi
+          
+          cd app
+          cordova platform add android
+          cordova build android --release -- --packageType=apk
+
+      - name: Find APK
+        run: |
+          find app/platforms/android/app/build/outputs -name "*.apk" -exec cp {} ./built.apk \;
+          ls -la built.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: built.apk
+          retention-days: 1
