@@ -61,37 +61,46 @@ jobs:
           rm -rf app/www/*
           cp -r src_www/* app/www/ 2>/dev/null || true
 
-      - name: Add Android platform and prepare
+      - name: Add Android platform
         working-directory: app
         run: |
           cordova platform add android
-          cordova prepare android
+          echo "=== platforms/android ==="
+          ls -la platforms/android/ | head -20
+          echo "=== gradlew check ==="
+          ls -la platforms/android/gradlew || echo "GRADLEW MISSING"
 
-      - name: Replace icons and splashes with ImageMagick
+      - name: First build to generate gradlew
+        working-directory: app
+        run: cordova build android
+
+      - name: Verify gradlew exists
+        working-directory: app/platforms/android
+        run: |
+          ls -la gradlew
+          test -f gradlew && echo "✓ gradlew ready" || exit 1
+
+      - name: Replace icons and splashes
         run: |
           RES="app/platforms/android/app/src/main/res"
           ICON="${{ github.workspace }}/icon.png"
           SPLASH="${{ github.workspace }}/splash.png"
           
-          echo "=== Source files ==="
-          ls -la icon.png splash.png 2>/dev/null || echo "not found"
-          echo "=== Target res dir ==="
-          ls -la $RES 2>/dev/null | head -20
+          echo "=== Target res folder ==="
+          ls -la $RES | head -30
           
-          if [ ! -f "$ICON" ]; then echo "❌ icon.png missing"; fi
-          if [ ! -f "$SPLASH" ]; then echo "❌ splash.png missing"; fi
-          
-          # === ICONS ===
+          # ===== ICONS =====
           for pair in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
             d="${pair%:*}"; s="${pair#*:}"
             mkdir -p "$RES/mipmap-$d"
             if [ -f "$ICON" ]; then
               convert "$ICON" -resize ${s}x${s} -background none -gravity center -extent ${s}x${s} "$RES/mipmap-$d/ic_launcher.png"
               convert "$ICON" -resize ${s}x${s} -background none -gravity center -extent ${s}x${s} "$RES/mipmap-$d/ic_launcher_round.png"
+              convert "$ICON" -resize ${s}x${s} -background none -gravity center -extent ${s}x${s} "$RES/mipmap-$d/ic_launcher_foreground.png"
             fi
           done
           
-          # === SPLASH PORTRAIT ===
+          # ===== SPLASH =====
           for pair in mdpi:320x480 hdpi:480x800 xhdpi:720x1280 xxhdpi:960x1600 xxxhdpi:1280x1920; do
             d="${pair%:*}"; s="${pair#*:}"
             mkdir -p "$RES/drawable-port-$d"
@@ -100,7 +109,7 @@ jobs:
             fi
           done
           
-          # === SPLASH LANDSCAPE ===
+          # Landscape splashes
           for pair in mdpi:480x320 hdpi:800x480 xhdpi:1280x720 xxhdpi:1600x960 xxxhdpi:1920x1280; do
             d="${pair%:*}"; s="${pair#*:}"
             mkdir -p "$RES/drawable-land-$d"
@@ -109,13 +118,12 @@ jobs:
             fi
           done
           
-          echo "=== Generated icons ==="
-          ls -la $RES/mipmap-*/ic_launcher.png
-          echo "=== Generated splashes ==="
-          ls -la $RES/drawable-port-*/screen.png
-          ls -la $RES/drawable-land-*/screen.png
+          echo "=== Icons generated ==="
+          ls -la $RES/mipmap-mdpi/ic_launcher.png
+          echo "=== Splashes generated ==="
+          ls -la $RES/drawable-port-mdpi/screen.png
 
-      - name: Build APK with Gradle directly
+      - name: Rebuild APK with Gradle
         working-directory: app/platforms/android
         run: |
           chmod +x gradlew
