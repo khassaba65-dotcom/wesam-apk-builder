@@ -47,8 +47,6 @@ jobs:
           mkdir -p src_www
           if [ -f source.zip ]; then
             unzip -q source.zip -d src_www/
-          else
-            echo "<h1>Hello</h1>" > src_www/index.html
           fi
           if [ $(ls src_www | wc -l) -eq 1 ] && [ -d "src_www/$(ls src_www)" ]; then
             mv src_www/*/* src_www/ 2>/dev/null || true
@@ -63,25 +61,29 @@ jobs:
           mkdir -p app/resources
           if [ -f icon.png ]; then
             cp icon.png app/resources/icon.png
-            echo "✓ icon.png copied"
+            echo "✓ icon.png copied to resources"
           fi
           if [ -f splash.png ]; then
             cp splash.png app/resources/splash.png
-            echo "✓ splash.png copied"
+            echo "✓ splash.png copied to resources"
           fi
 
-      - name: Generate resources (icons + splash)
+      - name: Add Android platform
         working-directory: app
-        run: |
-          if [ -f resources/icon.png ] || [ -f resources/splash.png ]; then
-            cordova-res android --skip-config --copy || echo "cordova-res warning, continuing..."
-          fi
+        run: cordova platform add android
 
-      - name: Build APK (debug signed)
+      - name: Generate icons and splashes
         working-directory: app
         run: |
-          cordova platform add android
-          cordova build android
+          cordova-res android --copy 2>&1 || echo "⚠️ cordova-res warning"
+          echo "=== Icons generated ==="
+          find platforms/android/app/src/main/res -name "ic_launcher*.png" 2>/dev/null | head -20
+          echo "=== Splashes generated ==="
+          find platforms/android/app/src/main/res -name "*splash*.png" -o -name "*screen*.png" 2>/dev/null | head -20
+
+      - name: Build APK
+        working-directory: app
+        run: cordova build android
 
       - name: Find APK
         run: |
