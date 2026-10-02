@@ -37,8 +37,10 @@ jobs:
           accept-android-sdk-licenses: true
           log-accepted-android-sdk-licenses: false
 
-      - name: Install Cordova
-        run: npm install -g cordova@12
+      - name: Install Cordova and cordova-res
+        run: |
+          npm install -g cordova@12
+          npm install -g cordova-res
 
       - name: Prepare source
         run: |
@@ -58,19 +60,28 @@ jobs:
           rm -rf app/www/*
           cp -r src_www/* app/www/ 2>/dev/null || true
           
+          mkdir -p app/resources
           if [ -f icon.png ]; then
-            mkdir -p app/res/icon/android
-            cp icon.png app/res/icon/android/icon.png
+            cp icon.png app/resources/icon.png
+            echo "✓ icon.png copied"
           fi
-          
           if [ -f splash.png ]; then
-            mkdir -p app/res/screen/android
-            cp splash.png app/res/screen/android/screen-portrait.png
+            cp splash.png app/resources/splash.png
+            echo "✓ splash.png copied"
           fi
-          
-          cd app
+
+      - name: Generate resources (icons + splash)
+        working-directory: app
+        run: |
+          if [ -f resources/icon.png ] || [ -f resources/splash.png ]; then
+            cordova-res android --skip-config --copy || echo "cordova-res warning, continuing..."
+          fi
+
+      - name: Build APK (debug signed)
+        working-directory: app
+        run: |
           cordova platform add android
-          cordova build android --release -- --packageType=apk
+          cordova build android
 
       - name: Find APK
         run: |
