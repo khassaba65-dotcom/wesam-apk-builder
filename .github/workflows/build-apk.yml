@@ -37,16 +37,19 @@ jobs:
           accept-android-sdk-licenses: true
           log-accepted-android-sdk-licenses: false
 
-      - name: Install Cordova and cordova-res
+      - name: Install Cordova and ImageMagick
         run: |
           npm install -g cordova@12
-          npm install -g cordova-res
+          sudo apt-get update -qq
+          sudo apt-get install -y imagemagick
 
       - name: Prepare source
         run: |
           mkdir -p src_www
           if [ -f source.zip ]; then
             unzip -q source.zip -d src_www/
+          else
+            echo "<h1>Hello</h1>" > src_www/index.html
           fi
           if [ $(ls src_www | wc -l) -eq 1 ] && [ -d "src_www/$(ls src_www)" ]; then
             mv src_www/*/* src_www/ 2>/dev/null || true
@@ -57,35 +60,68 @@ jobs:
           cordova create app "${{ github.event.inputs.package_name }}" "${{ github.event.inputs.app_name }}"
           rm -rf app/www/*
           cp -r src_www/* app/www/ 2>/dev/null || true
-          
-          mkdir -p app/resources
-          if [ -f icon.png ]; then
-            cp icon.png app/resources/icon.png
-            echo "✓ icon.png copied to resources"
-          fi
-          if [ -f splash.png ]; then
-            cp splash.png app/resources/splash.png
-            echo "✓ splash.png copied to resources"
-          fi
 
-      - name: Add Android platform
-        working-directory: app
-        run: cordova platform add android
-
-      - name: Generate icons and splashes
+      - name: Add Android platform and prepare
         working-directory: app
         run: |
-          cordova-res android --copy 2>&1 || echo "⚠️ cordova-res warning"
-          echo "=== Icons generated ==="
-          find platforms/android/app/src/main/res -name "ic_launcher*.png" 2>/dev/null | head -20
-          echo "=== Splashes generated ==="
-          find platforms/android/app/src/main/res -name "*splash*.png" -o -name "*screen*.png" 2>/dev/null | head -20
+          cordova platform add android
+          cordova prepare android
 
-      - name: Build APK
-        working-directory: app
-        run: cordova build android
+      - name: Replace icons and splashes with ImageMagick
+        run: |
+          RES="app/platforms/android/app/src/main/res"
+          ICON="${{ github.workspace }}/icon.png"
+          SPLASH="${{ github.workspace }}/splash.png"
+          
+          echo "=== Source files ==="
+          ls -la icon.png splash.png 2>/dev/null || echo "not found"
+          echo "=== Target res dir ==="
+          ls -la $RES 2>/dev/null | head -20
+          
+          if [ ! -f "$ICON" ]; then echo "❌ icon.png missing"; fi
+          if [ ! -f "$SPLASH" ]; then echo "❌ splash.png missing"; fi
+          
+          # === ICONS ===
+          for pair in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+            d="${pair%:*}"; s="${pair#*:}"
+            mkdir -p "$RES/mipmap-$d"
+            if [ -f "$ICON" ]; then
+              convert "$ICON" -resize ${s}x${s} -background none -gravity center -extent ${s}x${s} "$RES/mipmap-$d/ic_launcher.png"
+              convert "$ICON" -resize ${s}x${s} -background none -gravity center -extent ${s}x${s} "$RES/mipmap-$d/ic_launcher_round.png"
+            fi
+          done
+          
+          # === SPLASH PORTRAIT ===
+          for pair in mdpi:320x480 hdpi:480x800 xhdpi:720x1280 xxhdpi:960x1600 xxxhdpi:1280x1920; do
+            d="${pair%:*}"; s="${pair#*:}"
+            mkdir -p "$RES/drawable-port-$d"
+            if [ -f "$SPLASH" ]; then
+              convert "$SPLASH" -resize ${s}^ -gravity center -background "#0a0e1a" -extent ${s} "$RES/drawable-port-$d/screen.png"
+            fi
+          done
+          
+          # === SPLASH LANDSCAPE ===
+          for pair in mdpi:480x320 hdpi:800x480 xhdpi:1280x720 xxhdpi:1600x960 xxxhdpi:1920x1280; do
+            d="${pair%:*}"; s="${pair#*:}"
+            mkdir -p "$RES/drawable-land-$d"
+            if [ -f "$SPLASH" ]; then
+              convert "$SPLASH" -resize ${s}^ -gravity center -background "#0a0e1a" -extent ${s} "$RES/drawable-land-$d/screen.png"
+            fi
+          done
+          
+          echo "=== Generated icons ==="
+          ls -la $RES/mipmap-*/ic_launcher.png
+          echo "=== Generated splashes ==="
+          ls -la $RES/drawable-port-*/screen.png
+          ls -la $RES/drawable-land-*/screen.png
 
-      - name: Find APK
+      - name: Build APK with Gradle directly
+        working-directory: app/platforms/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Find and copy APK
         run: |
           find app/platforms/android/app/build/outputs -name "*.apk" -exec cp {} ./built.apk \;
           ls -la built.apk
